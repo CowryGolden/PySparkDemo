@@ -1,0 +1,83 @@
+HADOOP_CONF_DIR=/usr/local/hadoop/hadoop-2.6.4/etc/hadoop pyspark --master yarn --deploy-mode client
+
+>>> global Path
+>>> if sc.master[0:5] == 'local':
+...     Path='file:/root/pythonwork/PythonProject/'
+... else:
+...     Path='hdfs://master:9000/user/root/'
+... 
+
+if sc.master[0:5] == 'local':
+    Path='file:/root/pythonwork/PythonProject/'
+else:
+    Path='hdfs://master:9000/user/root/'
+
+>>> rawUserData=sc.textFile(Path + 'data/u.data')
+>>> rawUserData.count()
+100000
+
+>>> rawUserData.first()
+u'196\t242\t3\t881250949'
+
+>>> from pyspark.mllib.recommendation import Rating
+>>> rawRatings=rawUserData.map(lambda line: line.split('\t')[:3])
+>>> rawRatings.take(5)
+[[u'196', u'242', u'3'], [u'186', u'302', u'3'], [u'22', u'377', u'1'], [u'244', u'51', u'2'], [u'166', u'346', u'1']]
+
+>>> ratingsRDD=rawRatings.map(lambda x: (x[0], x[1], x[2]))
+>>> ratingsRDD.take(5)
+[(u'196', u'242', u'3'), (u'186', u'302', u'3'), (u'22', u'377', u'1'), (u'244', u'51', u'2'), (u'166', u'346', u'1')]
+
+>>> numRatings=ratingsRDD.count()
+>>> numRatings
+100000
+
+>>> numUsers=ratingsRDD.map(lambda x: x[0]).distinct().count()
+>>> numUsers                                                                    
+943
+
+
+>>> numMovies=ratingsRDD.map(lambda x: x[1]).distinct().count()
+>>> numMovies
+1682
+
+>>> from pyspark.mllib.recommendation import ALS
+>>> model=ALS.train(ratingsRDD, 10, 10, 0.01)    # 由于使用的是yarn模式启动，这里需要在节点data1和data2上安装numpy（pip install numpy），否则报错：ImportError: No module named numpy
+>>> print model
+<pyspark.mllib.recommendation.MatrixFactorizationModel object at 0x7f525d179190>
+
+>>> model.recommendProducts(100, 5)
+[Rating(user=100, product=1426, rating=6.251979417279406), Rating(user=100, product=1066, rating=5.8391992623128), Rating(user=100, product=745, rating=5.65910571997631), Rating(user=100, product=557, rating=5.644704804807767), Rating(user=100, product=1252, rating=5.4457604772615635)]
+
+>>> model.predict(100, 1426)
+6.251979417279406
+
+>>> model.recommendUsers(product=200, num=5)
+[Rating(user=55, product=200, rating=7.16419410145812), Rating(user=362, product=200, rating=6.346243385393633), Rating(user=820, product=200, rating=6.285706556974253), Rating(user=353, product=200, rating=6.240434699507385), Rating(user=364, product=200, rating=6.197054106398828)]
+
+>>> itemRDD=sc.textFile(Path + 'data/u.item')
+>>> itemRDD.count()
+1682
+
+>>> movieTitle=itemRDD.map(lambda line: line.split('|')).map(lambda a: (float(a[0]), a[1])).collectAsMap()
+>>> len(movieTitle)
+1682
+
+>>> movieTitle.items()[:5]
+[(1.0, u'Toy Story (1995)'), (2.0, u'GoldenEye (1995)'), (3.0, u'Four Rooms (1995)'), (4.0, u'Get Shorty (1995)'), (5.0, u'Copycat (1995)')]
+
+>>> movieTitle[5]
+u'Copycat (1995)'
+
+
+>>> recommendP=model.recommendProducts(200, 5)
+>>> for p in recommendP:
+...     print 'UseId=' + str(p[0]) + ' Recommend Movie: ' + str(movieTitle[p[1]]) + ' Rating: ' + str(p[2])
+... 
+UseId=200 Recommend Movie: Roommates (1995) Rating: 5.85462969165
+UseId=200 Recommend Movie: Fresh (1994) Rating: 5.84891660572
+UseId=200 Recommend Movie: Pather Panchali (1955) Rating: 5.74850758194
+UseId=200 Recommend Movie: Winter Guest, The (1997) Rating: 5.67355457987
+UseId=200 Recommend Movie: Shawshank Redemption, The (1994) Rating: 5.37842983234
+
+
